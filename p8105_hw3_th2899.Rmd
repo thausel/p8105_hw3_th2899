@@ -8,10 +8,16 @@ output: github_document
 
 ```{r}
 library(tidyverse)
+library(ggridges)
+library(patchwork)
+
+library(p8105.datasets)
 
 knitr::opts_chunk$set(
-  fig.width = 6,
-  fig.asp = .6,
+	echo = TRUE,
+	warning = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
   out.width = "90%"
 )
 
@@ -28,301 +34,147 @@ scale_fill_discrete = scale_fill_viridis_d
 
 ## Problem 1
 
-
-
-
-
-
-
-
-
-
-
-## TO BE DELETED
-
-Copy in this code from course website to load weather dataset as before, only exception is the addition of month variable, created using lubridate::floor_date().:
+Loading the instacart dataset:
 
 ```{r}
-weather_df =  
-  rnoaa::meteo_pull_monitors(
-    c("USW00094728", "USC00519397", "USS0023B17S"),
-    var = c("PRCP", "TMIN", "TMAX"), 
-    date_min = "2017-01-01",
-    date_max = "2017-12-31") %>%
-  mutate(
-    name = recode(
-      id, 
-      USW00094728 = "CentralPark_NY", 
-      USC00519397 = "Waikiki_HA",
-      USS0023B17S = "Waterhole_WA"),
-    tmin = tmin / 10,
-    tmax = tmax / 10,
-    month = lubridate::floor_date(date, unit = "month")) %>%
-  select(name, id, everything())
+data("instacart")
 
-weather_df
+instacart = 
+  instacart %>% 
+  as_tibble(instacart)
 ```
 
-Using group_by() to make groupings within data explicit so that they can be included in subsequent operations, e.g., grouping weather_df by name and month. Several important functions respect grouping structures, e.g., summarize to create one-number summaries within each group, or  mutate to define variables within groups.
+In the following I will do an exploration of the  dataset. First, to gain an overview:
 
 ```{r}
-weather_df %>%
-  group_by(name, month)
-# you don't easily notice this in the code, its just noticable in the second line where it says that it can now be grouped by name and month
+skimr::skim(instacart)
 ```
 
-Using summarize + group to count things:
+The Instacart Online Grocery Shopping Dataset is an anonymized dataset with over 3 million online grocery orders from more than 200,000 Instacart users from 2017. It consists of `r nrow(instacart)` observations of products orders, and `r ncol(instacart)` different variables: `r names(instacart)`. In total, there are `r instacart %>% select(product_id) %>% distinct %>% count` products found in `r instacart %>% select(user_id, order_id) %>% distinct %>% count` orders from `r instacart %>% select(user_id) %>% distinct %>% count` distinct users.
+
+Most important variables are:
+
+* `r names(instacart)[1]`: order identifier
+* `r names(instacart)[2]`: product identifier
+* `r names(instacart)[5]`: customer identifier
+* `r names(instacart)[7]`: order sequence number for this user (1=first, n=nth), rages from `r range(pull(instacart, order_number))`
+* `r names(instacart)[8]`: day of the week on which the order was placed
+* `r names(instacart)[10]`: stands for days since the last order, capped at 30, NA if order_number = 1, ranges from `r range(pull(instacart, days_since_prior_order))`
+*`r names(instacart)[10]`: aisle identifier, tells us the location of the item in the warehouse
+
+
+The following table counts the number of times each aisle is used in the list of orders and orders them by most frequent to least frequent:
 
 ```{r}
-weather_df %>%
-  group_by(month) %>%
-  summarize(n_obs = n())
+instacart %>% 
+  count(aisle) %>% 
+  arrange(desc(n))
 ```
 
-We can group by more than one thing and then summarize:
+In total, there are `r instacart %>% select(aisle) %>% distinct %>% count` aisles and the most frequently used are fresh vegetables and fresh fruits.
+
+
+The following is a plot showing the number of items ordered in each aisle, limited to aisles with more than 10000 items ordered and ordered in ascending order:
 
 ```{r}
-weather_df %>%
-  group_by(name, month) %>%
-  summarize(n_obs = n())
+instacart %>% 
+  count(aisle) %>% 
+  filter(n > 10000) %>% 
+  mutate(aisle = fct_reorder(aisle, n)) %>% 
+  ggplot(aes(x = aisle, y = n)) + 
+  geom_point() + 
+  labs(title = "Number of items ordered in each aisle") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
 ```
 
-Alternatively, to count things, you could use count() in place of group_by() and summarize() if you remember that this function exists:
+The next table shows the three most popular items in each of the aisles “baking ingredients”, “dog food care”, and “packaged vegetables fruits” and includes number of times each item is ordered in your table:
 
 ```{r}
-weather_df %>%
-  count(month, name = "n_obs")
-# make use of name argument in count, which defaults to "n"
+instacart %>% 
+  filter(aisle %in% c("baking ingredients", "dog food care", "packaged vegetables fruits")) %>%
+  group_by(aisle) %>% 
+  count(product_name) %>% 
+  mutate(rank = min_rank(desc(n))) %>% 
+  filter(rank < 4) %>% 
+  arrange(desc(n)) %>%
+  knitr::kable()
 ```
 
-Alternatively, we can use R’s table function to count, both functions produce summaries of how often values appear, but table’s output is of class table and is hard to do any additional work with, while count produces a dataframe you can use or manipulate directly. For an example, run the code below and try to do something useful with the result…
+The next table displays the mean hour of the day at which "Pink Lady Apples" and "Coffee Ice Cream" are ordered on each day of the week; formatted in an agenda format (i.e., untidied):
 
 ```{r}
-weather_df %>%
-  pull(month) %>% 
-  table
-```
-
-You can use summarize() to compute multiple summaries within each group, e.g., count the number of observations in each month and the number of distinct values of date in each month:
-
-```{r}
-weather_df %>%
-  group_by(month) %>%
-  summarize(
-    n_obs = n(),
-    n_days = n_distinct(date))
-```
-
-## 2x2 tables
-
-Tabulate the frequency of a binary outcome across levels of a binary predictor, e.g., you want to look at the number of cold and not-cold days in Central Park and Waterhole. We can do this with some extra data manipulation steps and group_by + summarize
-
-```{r}
-weather_df %>% 
-  mutate(cold = case_when(
-      tmax <  5 ~ "cold",
-      tmax >= 5 ~ "not_cold",
-      TRUE      ~ ""
-  )) %>% 
-  filter(name != "Waikiki_HA") %>% 
-  group_by(name, cold) %>% 
-  summarize(count = n())
-```
-
-This is a “tidy” table, and it’s also a data frame. You could re-organize into a more standard (non-tidy) 2x2 table using pivot_wider, or you could use janitor::tabyl:
-
-```{r}
-weather_df %>% 
-  mutate(cold = case_when(
-    tmax <  5 ~ "cold",
-    tmax >= 5 ~ "not_cold",
-    TRUE     ~ ""
-  )) %>% 
-  filter(name != "Waikiki_HA") %>% 
-  janitor::tabyl(name, cold)
-```
-
-## General summaries
-
-Standard statistical summaries are regularly computed in summarize() using functions like mean(), median(), var(), sd(), mad(), IQR(), min(), and max():
-
-```{r}
-weather_df %>%
-  group_by(month) %>%
-  summarize(
-    mean_tmax = mean(tmax),
-    mean_prec = mean(prcp, na.rm = TRUE),
-    median_tmax = median(tmax),
-    sd_tmax = sd(tmax))
-```
-
-Once again, you can group by more than one variable:
-
-```{r}
-weather_df %>%
-  group_by(name, month) %>%
-  summarize(
-    mean_tmax = mean(tmax),
-    median_tmax = median(tmax))
-```
-
-Using the across function to summarize multiple columns using the same summary:
-
-```{r}
-weather_df %>%
-  group_by(name, month) %>%
-  summarize(across(tmin:prcp, mean))
-```
-
-Summarize() produces a dataframe so you can incorporate grouping and summarizing within broader analysis pipelines, e.g., create a plot based on the monthly summary:
-
-```{r}
-weather_df %>%
-  group_by(name, month) %>%
-  summarize(mean_tmax = mean(tmax)) %>%
-  ggplot(aes(x = month, y = mean_tmax, color = name)) + 
-    geom_point() + geom_line()
-```
-
-Presenting reader-friendly results for exploratory analysis often benefits from some un-tidying, e.g., the table below shows month-by-month average max temperatures in a more human-readable format:
-
-```{r}
-weather_df %>%
-  group_by(name, month) %>%
-  summarize(mean_tmax = mean(tmax)) %>% 
-  pivot_wider(
-    names_from = name,
-    values_from = mean_tmax) %>% 
-  knitr::kable(digits = 1)
-```
-
-## Grouped mutate
-
-Summarizing collapses groups into single data points. In contrast, using mutate() in conjuntion with group_by() will retain all original data points and add new variables computed within groups.
-
-Suppose you want to compare the daily max temperature to the annual average max temperature for each station separately, and to plot the result. You could do so using:
-
-```{r}
-weather_df %>%
-  group_by(name) %>%
-  mutate(
-    mean_tmax = mean(tmax, na.rm = TRUE),
-    centered_tmax = tmax - mean_tmax) %>% 
-  ggplot(aes(x = date, y = centered_tmax, color = name)) + 
-    geom_point() 
-```
-
-# Window functions
-
-The previous example used mean() to compute the mean within each group, which was then subtracted from the observed max tempurature. mean() takes n inputs and produces a single output. Window functions, in contrast, take n inputs and return n outputs, and the outputs depend on all the inputs. There are several categories of window functions; you’re most likely to need ranking functions and offsets, which we illustrate below.
-
-First, we can find the max temperature ranking within month.
-
-```{r}
-weather_df %>%
-  group_by(name, month) %>%
-  mutate(temp_ranking = min_rank(tmax))
-# here a ranking of 1 is the smallest tmax in each month
-```
-
-This sort of ranking is useful when filtering data based on rank. We could, for example, keep only the day with the lowest max temperature within each month:
-
-```{r}
-weather_df %>%
-  group_by(name, month) %>%
-  filter(min_rank(tmax) < 2)
-```
-
-We could also keep the three days with the highest max temperature:
-
-```{r}
-weather_df %>%
-  group_by(name, month) %>%
-  filter(min_rank(desc(tmax)) < 4)
-# desc(tmax) means now highest temperature is ranked as 1, then we select the first three
-```
-
-Offsets, especially lags, are used to compare an observation to it’s previous value. This is useful, for example, to find the day-by-day change in max temperature within each station over the year
-
-```{r}
-weather_df %>%
-  group_by(name) %>%
-  mutate(temp_change = tmax - lag(tmax))
-```
-
-This kind of variable might be used to quantify the day-by-day variability in max temperature, or to identify the largest one-day increase:
-
-```{r}
-weather_df %>%
-  group_by(name) %>%
-  mutate(temp_change = tmax - lag(tmax)) %>%
-  summarize(
-    temp_change_sd = sd(temp_change, na.rm = TRUE),
-    temp_change_max = max(temp_change, na.rm = TRUE))
+instacart %>%
+  filter(product_name %in% c("Pink Lady Apples", "Coffee Ice Cream")) %>%
+  group_by(product_name, order_dow) %>%
+  summarize(mean_hour = mean(order_hour_of_day)) %>%
+  spread(key = order_dow, value = mean_hour) %>%
+  knitr::kable(digits = 2)
 ```
 
 
-## Learning assignments
+## Problem 2
 
-In the PULSE data, the primary outcome is BDI score; it’s observed over follow-up visits, and we might ask if the typical BDI score values are roughly similar at each. Try to write a code chunk that imports, cleans, and summarizes the PULSE data to examine the mean and median at each visit. Export the results of this in a reader-friendly format.
-
+Load and tidy the dataset (i.e., includes all originally observed variables and values; has useful variable names; includes a weekday vs weekend variable; encodes with reasonable variable classes, reordered variables):
 ```{r}
-pulse_data = 
-  haven::read_sas("./data/public_pulse_data.sas7bdat") %>%
-  janitor::clean_names() %>%
+accel_df = read.csv("./data/accel_data.csv") %>% 
+  janitor::clean_names() %>% 
   pivot_longer(
-    bdi_score_bl:bdi_score_12m,
-    names_to = "visit", 
-    names_prefix = "bdi_score_",
-    values_to = "bdi") %>%
-# takes values from rows and puts them into columns
-  select(id, visit, everything()) %>%
-# orders and selects columns to be displayed
-   mutate(
-    visit = replace(visit, visit == "bl", "00m"),
-# replaces bl with 00 in visit column
-    visit = factor(visit, levels = str_c(c("00", "01", "06", "12"), "m"))) %>%
-# factorizes visit column
-  arrange(id, visit)
-# ordering of the data
-
-pulse_data %>% 
-  group_by(visit) %>% 
-  summarize(
-    mean_bdi = mean(bdi, na.rm = TRUE),
-    median_bdi = median(bdi, na.rm = TRUE)) %>% 
-  knitr::kable(digits = 3)
+    activity_1:activity_1440,
+    names_to = "minute",
+    values_to = "activity_count",
+    names_prefix = "activity_"
+  ) %>% 
+  rename(day_type_1 = day) %>% 
+  mutate(
+    day_type_2 = if_else((day_type_1 == "Saturday" | day_type_1 == "Sunday"),"Weekend","Weekday"),
+    minute = as.numeric(minute),
+    week = as.numeric(week),
+    day_id = as.numeric(day_id),
+    day_type_1 = factor(day_type_1, level = c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")),
+    day_type_2 = factor(day_type_2, level = c("Weekday", "Weekend"))
+  ) %>% 
+  relocate(week, day_id, day_type_1, day_type_2, minute, activity_count)
 ```
 
-In the FAS data, there are several outcomes of interest; for now, focus on post-natal day on which a pup is able to pivot. Two predictors of interest are the dose level and the day of treatment. Produce a reader-friendly table that quantifies the possible associations between dose, day of treatment, and the ability to pivot.
+The following helps to generate an overview of the tidied dataset:
 
 ```{r}
-pup_data = 
-  read_csv("./data/FAS_pups.csv") %>%
-  janitor::clean_names() %>%
-  mutate(sex = recode(sex, `1` = "male", `2` = "female")) 
-# imports the pups data
-
-litter_data = 
-  read_csv("./data/FAS_litters.csv") %>%
-  janitor::clean_names() %>%
-  separate(group, into = c("dose", "day_of_tx"), sep = 3)
-# imports the litters data
-
-fas_data = left_join(pup_data, litter_data, by = "litter_number") 
-# joins them
-
-fas_data %>% 
-  group_by(dose, day_of_tx) %>% 
-  drop_na(dose) %>% 
-  summarize(mean_pivot = mean(pd_pivot, na.rm = TRUE)) %>% 
-# produces the desired information
-  pivot_wider(
-    names_from = dose, 
-    values_from = mean_pivot) %>% 
-#  un-tidies the result
-  knitr::kable(digits = 3)
-# exports a table using knitr::kable.
+skimr::skim(accel_df)
 ```
 
+The dataset contains five weeks of accelerometer data collected on a 63 year-old male with BMI 25, who was admitted to the Advanced Cardiac Care Center of Columbia University Medical Center and diagnosed with congestive heart failure (CHF). Concretely, it consitst of `r nrow(accel_df)` observations of activity counts (one for each minute of each day of a 5 week period), and `r ncol(accel_df)` different variables: `r names(accel_df)` 
+
+* `r names(accel_df)[1]`: week identifier, from `r range(pull(accel_df, week))`, numerical variable
+* `r names(accel_df)[2]`: day identifier, from `r range(pull(accel_df, day_id))`, numerical variable
+* `r names(accel_df)[3]`: day type 1 from Monday, Sunday, categorical variable
+* `r names(accel_df)[4]`: day type 2, Weekday vs. Weekend, categorical variable
+* `r names(accel_df)[5]`: minute identifier, from `r range(pull(accel_df, minute))`, numerical variable
+* `r names(accel_df)[6]`: activity count (for each minute)
+
+Creating a table with total activity over each day (aggregated across minute):
+
+```{r}
+accel_df %>% 
+  group_by(day_id) %>% 
+  summarize(total_activity = sum(activity_count)) %>% 
+  knitr::kable()
+```
+
+Plotting above data for better visibility:
+
+```{r}
+instacart %>% 
+  count(aisle) %>% 
+  filter(n > 10000) %>% 
+  mutate(aisle = fct_reorder(aisle, n)) %>% 
+  ggplot(aes(x = aisle, y = n)) + 
+  geom_point() + 
+  labs(title = "Number of items ordered in each aisle") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+
+
+
+* Accelerometer data allows the inspection activity over the course of the day. Make a single-panel plot that shows the 24-hour activity time courses for each day and use color to indicate day of the week. Describe in words any patterns or conclusions you can make based on this graph
 
