@@ -163,18 +163,63 @@ accel_df %>%
 Plotting above data for better visibility:
 
 ```{r}
-instacart %>% 
-  count(aisle) %>% 
-  filter(n > 10000) %>% 
-  mutate(aisle = fct_reorder(aisle, n)) %>% 
-  ggplot(aes(x = aisle, y = n)) + 
+accel_df %>% 
+  group_by(day_id) %>% 
+  summarize(total_activity = sum(activity_count), day_type_2 = day_type_2) %>% 
+  ggplot(aes(x = day_id, y = total_activity)) + 
   geom_point() + 
-  labs(title = "Number of items ordered in each aisle") +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+  geom_line() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Total activity count per day",
+    x = "Day ID",
+    y = "Total Activity Counts",
+    caption = "Data from the accel dataset"
+    )
 ```
 
+Looking at above graph it's difficult to make out a trend, as total activity counts vary greatly from day to day. The fitted line is decreasing, indicating that total activity count seems to have been going down over the course of the 5 weeks.
 
+In the following I create a similar graph but separate weekdays from weekends:
 
+```{r}
+accel_df %>% 
+  group_by(day_id) %>% 
+  summarize(total_activity = sum(activity_count), day_type_2 = day_type_2) %>% 
+  ggplot(aes(x = day_id, y = total_activity, color = day_type_2)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Total activity count per day, separated by weekday vs. weekend",
+    x = "Day ID",
+    y = "Total Activity Count",
+    caption = "Data from the accel dataset"
+    ) +
+  theme(legend.title=element_blank()) +
+  facet_grid(. ~ day_type_2)
+```
 
-* Accelerometer data allows the inspection activity over the course of the day. Make a single-panel plot that shows the 24-hour activity time courses for each day and use color to indicate day of the week. Describe in words any patterns or conclusions you can make based on this graph
+The above graphs show that while total activity count for weekday generally seemed to have increased over the course of the study, total activity on weekends drastically declined over the same period. Potentially, the test subject forgot to wear the accelerometer on the weekends, since we get two days of complete inactivity.
+
+The following graph is a single-panel plot that shows the 24-hour activity time courses for each day and uses color to indicate day of the week: 
+
+```{r}
+accel_df %>% 
+  group_by(day_id) %>% 
+  ggplot(aes(x = minute, y = activity_count, color = day_type_1)) + 
+  geom_line(alpha = 0.5) +
+  labs(
+    title = "24-hour activity time courses for each day",
+    x = "Hour of the day",
+    y = "Activity Count",
+    caption = "Data from the accel dataset"
+    ) +
+  scale_x_continuous(
+    breaks = seq(0,1440,by = 60),
+    label = seq(0,24,by = 1)) +
+  theme(legend.title=element_blank())
+```
+
+First of all, the grah is quite cluttered, making it difficult to deduct a lot from it. What can be said is that there is generally close to zero activity during midnight-5am, very low activity between 5-6am & 10pm-midnight (we can assume this person usually goes to bed at 10pm and wakes up at 6am), 'normal' activity from 6am-7.30pm and a period of high activity between 7.30-10pm. It also becomes evident from the graph that Sundays are quite slow days for this person, with generally low activity throughout the day.   
+
 
